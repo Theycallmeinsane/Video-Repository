@@ -1,0 +1,22 @@
+# Environment / secret files
+.env
+.env.*
+*.env
+.env.local
+.env.*.local
+.envrc
+local.env
+env
+
+# Virtual environments (common)
+.fast-venv/
+venv/
+ENV/
+env/
+
+# Optional: Python caches and build artifacts
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
