@@ -12,7 +12,6 @@ async def lifespan(app: FastAPI):
 app = FastAPI(lifespan=lifespan)
 
 @app.post("/upload/")
-# async def upload_file(
-    
-# ):
+async def upload_file():
+    pass
 
