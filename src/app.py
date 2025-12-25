@@ -1,6 +1,6 @@
 from fastapi import FastAPI, HTTPException, File, UploadFile, Form, Depends
 from requests import session
-from schemas import PostCreate
+from schemas import PostCreate,PostResponse, UserCreate, UserRead, UserUpdate
 from db import Post, create_async_engine, create_db_and_tables,get_async_session
 from sqlalchemy.ext.asyncio import AsyncSession
 from contextlib import asynccontextmanager
@@ -11,6 +11,7 @@ import shutil
 import os
 import uuid
 import tempfile
+from users import auth_backend,current_active_user, fastapi_users
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -18,7 +19,15 @@ async def lifespan(app: FastAPI):
     yield
 
 app = FastAPI(lifespan=lifespan)
-
+app.include_router(
+    fastapi_users.get_auth_router(auth_backend), prefix="/auth/jwt", tags=["auth"])
+app.include_router(
+    fastapi_users.get_register_router(UserRead,UserCreate), prefix="/auth", tags=["auth"])
+app.include_router(fastapi_users.get_reset_password_router(), prefix="/auth", tags=["auth"])
+app.include_router(
+    fastapi_users.get_verify_router(UserRead), prefix="/auth", tags=["auth"])
+app.include_router(
+    fastapi_users.get_users_router(UserRead, UserUpdate), prefix="/users", tags=["users"])
 @app.post("/upload/")
 async def upload_file(
 file: UploadFile=File(...),
@@ -79,3 +88,21 @@ async def get_feed(
         )
 
         return {"posts": posts_data}
+    
+
+@app.delete("/posts/{post_id}")
+async def delete_post(
+        post_id: str,
+        session: AsyncSession=Depends(get_async_session)
+    ):
+    try:
+        post_uuid = uuid.UUID(post_id)
+        result = await session.execute(select(Post).where(Post.id == post_uuid))
+        post = result.scalars().first()
+        if not post:
+            raise HTTPException(status_code=404, detail="Post not found")
+        await session.delete(post)
+        await session.commit()
+        return {"detail": "Post deleted successfully"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
