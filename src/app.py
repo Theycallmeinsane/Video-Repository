@@ -1,7 +1,7 @@
 from fastapi import FastAPI, HTTPException, File, UploadFile, Form, Depends
 from requests import session
 from schemas import PostCreate,PostResponse, UserCreate, UserRead, UserUpdate
-from db import Post, create_async_engine, create_db_and_tables,get_async_session
+from db import Post, create_async_engine, create_db_and_tables,get_async_session, User
 from sqlalchemy.ext.asyncio import AsyncSession
 from contextlib import asynccontextmanager
 from sqlalchemy import select
@@ -31,6 +31,7 @@ app.include_router(
 @app.post("/upload/")
 async def upload_file(
 file: UploadFile=File(...),
+user: User = Depends(current_active_user),
 caption: str = Form(""),
 session: AsyncSession=Depends(get_async_session)
 ):
@@ -49,7 +50,8 @@ session: AsyncSession=Depends(get_async_session)
         )
         if upload_result.response_metadata.http_status_code == 200:
             
-            post = Post(caption = caption,
+            post = Post(user_id = user.id,
+                        caption = caption,
                         url = upload_result.url,
                         file_type = "video" if file.content_type.startswith("video/") else "image",
                         file_name = upload_result.name
@@ -68,7 +70,8 @@ session: AsyncSession=Depends(get_async_session)
         file.file.close()
 @app.get("/feed")
 async def get_feed(
-    session: AsyncSession=Depends(get_async_session)
+    session: AsyncSession=Depends(get_async_session),
+    user: User = Depends(current_active_user)
 
 ):
     result = await session.execute(select(Post).order_by(Post.created_at.desc()))
@@ -78,11 +81,14 @@ async def get_feed(
     for post in posts:
         posts_data.append({
             "id" : str(post.id),
+            "user_id": str(post.user_id),
             "caption": post.caption,
             "url": post.url,
             "file_type": post.file_type,
             "file_name": post.file_name,
-            "created_at": post.created_at.isoformat()
+            "created_at": post.created_at.isoformat(),
+            "is_owner": post.user_id == user.id,
+            "email": post.user.email
         
         }
         )
@@ -93,7 +99,8 @@ async def get_feed(
 @app.delete("/posts/{post_id}")
 async def delete_post(
         post_id: str,
-        session: AsyncSession=Depends(get_async_session)
+        session: AsyncSession=Depends(get_async_session),
+        user: User = Depends(current_active_user)
     ):
     try:
         post_uuid = uuid.UUID(post_id)
@@ -101,6 +108,8 @@ async def delete_post(
         post = result.scalars().first()
         if not post:
             raise HTTPException(status_code=404, detail="Post not found")
+        if post.user_id != user.id:
+            raise HTTPException(status_code=403, detail="Not authorized to delete this post")
         await session.delete(post)
         await session.commit()
         return {"detail": "Post deleted successfully"}
